@@ -118,4 +118,5 @@ if file_hu and file_items:
         st.download_button("📥 Stáhnout Excel", buffer.getvalue(), "report.xlsx", "application/vnd.ms-excel")
 
     except Exception as e:
+
         st.error(f"Chyba: {e}")
