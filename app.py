@@ -1,13 +1,130 @@
 import streamlit as st
 import pandas as pd
 import io
+import time
 
-# --- KONFIGURACE ---
-st.set_page_config(page_title="Logistics Analyzer", layout="wide")
-st.title("📦 Logistický Analyzátor Zakázek")
+# --- 1. KONFIGURACE ---
+st.set_page_config(
+    page_title="Logistics Analyzer Final v17",
+    page_icon="🚛",
+    layout="wide"
+)
 
-# --- LOGIKA ---
-PALLET_CARTONS = ['CARTON-16', 'CARTON-17', 'CARTON-18']
+# --- 2. CSS ---
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 8px; 
+        height: 3.5em; 
+        background-color: #2e7bcf; 
+        color: white; 
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. DATABÁZE PRAVIDEL (V3.17 - Added Descriptions) ---
+
+# POPISY OBALŮ (Z EMPTIES.XLSX)
+PACKAGING_DESC = {
+    '8216.00LP.04': 'PALLET OF WOOD 01',
+    '8216.2032.01': 'GESTELL 2032 Mercedes',
+    '9860000415900': 'EURO-PALETTE 0010 MAN',
+    '8216.00KP.04': 'PALLET OF WOOD 02',
+    '8216.3215.01': 'KLT 3215 DAIMLER',
+    '9860000417900': 'ABDECKPLATTE EURO 0207 MAN',
+    '8216.00LR.04': 'FRAME OF WOOD 21',
+    '8216.4129.01': 'KLT 4129 ESD DAIMLER',
+    '8216.0100.10': 'EPP-Behälter Radiofachgeräte',
+    '8216.0782.04': 'SPACER OF SOLID BOARD 61',
+    '8216.4314.01': 'KLT 4314 DAIMLER',
+    '9860000422400': 'KLT 4329',
+    '8216.0783.04': 'SPACER OF SOLID BOARD 62',
+    '8216.4329.01': 'KLT 4329 DAIMLER',
+    '9860000422000': 'KLT 4315',
+    '8216.00LD.04': 'LID OF PLYWOOD 71',
+    '8216.5009.01': 'EURO-PALETTE 5009 DAIMLER',
+    '9860000419300': 'DECKEL D41-ESD FUER KLT4129',
+    '8216.00KD.04': 'LID OF PLYWOOD 72',
+    '8216.5010.01': 'STAHL PALETTE 5010 DAIMLER',
+    '8216.0003.10': 'LID OF PLASTIC 91',
+    '8216.6129.01': 'KLT 6129 ESD DAIMLER',
+    '9860000421400': 'KLT 3215',
+    '8216.0092.04': 'LID OF PLASTIC 92',
+    '8216.6428.01': 'KLT 6428 DAIMLER',
+    '9860000423300': 'KLT 6428',
+    '8216.6429.01': 'Behaelter DAG 6429 KLT',
+    '9860000416100': 'RUNGENPALETTE 0036 MAN',
+    '8216.9040.01': 'ABDECKPLATTE GROß 9040 DAIMLER',
+    '9860000415300': 'POOL GITTERPALETTE 0002',
+    '8216.0750.04': 'KIT OF BOX OF PLASTIC 750',
+    '9860000126500': 'Abdeckplatte RE DTH 209040 PP',
+    '9860001175000': 'Halbe Box blau 09.84019-0100',
+    '8216.0780.04': 'KIT OF BOX OF PLASTIC 780',
+    '9860000876100': 'Gitterbox DTH 202032',
+    '9860001178000': 'ESD KLT 0523',
+    '9860001205300': 'Palette RE DTH 205010 Stahl 4W',
+    '9860001195800': 'EPP 09.84019-1339',
+    '8216.9041.01': 'Abdeckplatte RE DAG 9041 EURO',
+    '9860001530500': '0589 Deckel für KLT 4315',
+    '8216.9094.01': 'DECKEL 9094 FÜR KLT 6129 DAIML',
+    '9860001530600': '0569 Deckel für KLT 3215',
+    '8216.9093.01': 'DECKEL ZU KLT 4129',
+    '8216.0474.05': 'KLT Plastic COO8 MH-0474 SCANI',
+    '8216.2035.01': 'GESTELL 2035 DAIMLER',
+    '000198390A000': 'BEHAELTER KLT 6147 BLAU  594 X',
+    '8216.4328.01': 'KLT 4328 DAIMLER',
+    '9860001254000': 'Verp.-Set RE OEM Scania MH-0500',
+    '8216.5003.01': 'HOLZ PALETTE 5003 DAIMLER',
+    '8216.1875.05': 'Palette RE MTCO MH 1875 SC',
+    '8216.1874.05': 'H-PALETTE MH-1874 SCANIA',
+    '8216.0505.05': 'EPP MH-0505 SCANIA',
+    '8216.0010.03': 'EURO-PALETTE 0010 MAN'
+}
+
+# A) PALETY
+PALLET_WHITELIST = [
+    '8216.00LP.04', '8216.00KP.04', 
+    '8216.2032.01', '8216.2035.01', 
+    '8216.5009.01', '8216.5010.01', 
+    '8216.1874.05', '8216.1875.05', 
+    '8216.0010.03', '9860000415900', 
+    'CARTON-16', 'CARTON-17', 'CARTON-18'
+]
+
+# B) KLT
+KLT_WHITELIST = [
+    '8216.3215.01', '8216.4129.01', '8216.4314.01', 
+    '8216.4329.01', '8216.4328.01', '8216.6129.01', 
+    '8216.0100.10', '8216.0505.05', 
+    '000198390A000', '9860001393000', 
+    '9860000422000', '9860001178000', 
+    '9860000417900', '9860000419300', '9800004218000',
+    '8216.0780.04', '8216.6428.01', 
+    '8216.00LR.04', '8216.00LD.04'
+]
+
+# C) VRSTVY
+LAYER_RULES = {
+    'A2C3261731402': 4,
+    '2801405007390': 4,
+    'A2C7771840190': 4,
+    'A3C0000550002': 4,
+    'A3C1149850001': 4,
+    'A2C1482010032': 8, 
+    'A3C1051900001': 6,
+    'A3C1223480001': 3,
+    'A3C1223490001': 3,
+    'A3C1149860001': 4,
+}
+
+# --- 4. FUNKCE ---
+def clean_id(val):
+    if pd.isna(val): return ""
+    try: return str(int(float(val)))
+    except: return str(val).strip()
 
 def normalize_weight(row):
     try:
@@ -26,97 +143,171 @@ def normalize_dim(val, unit):
         return val
     except: return 0.0
 
-def classify_hu(row):
+def classify_hu_row(row):
     mat = str(row['Packaging materials']).upper().strip()
     l = row['L_CM']
     w = row['W_CM']
-    load_wt = row['Loading weight']
+    
+    if mat in KLT_WHITELIST: return pd.Series([False, True, False]) 
+    if mat in PALLET_WHITELIST: return pd.Series([True, False, False])
+    if 'CARTON' in mat: return pd.Series([False, False, True])
 
-    is_pallet = False
-    dim_match = ((abs(l - 120) <= 2 and abs(w - 80) <= 2) or (abs(l - 80) <= 2 and abs(w - 120) <= 2))
-    if dim_match or mat in PALLET_CARTONS:
-        is_pallet = True
+    is_pallet_dim = ((abs(l - 120) <= 2 and abs(w - 80) <= 2) or 
+                     (abs(l - 80) <= 2 and abs(w - 120) <= 2) or
+                     (abs(l - 120) <= 2 and abs(w - 100) <= 2))
+    
+    if is_pallet_dim and not mat.startswith('8216'):
+        return pd.Series([True, False, False])
 
-    is_klt = False
-    if (mat.startswith('8216') or 'KLT' in mat) and not is_pallet:
-        is_klt = True
+    return pd.Series([False, True, False]) 
 
-    is_carton = False
-    if 'CARTON' in mat and not is_pallet and not is_klt:
-        is_carton = True
+# --- 5. UI ---
+with st.sidebar:
+    st.title("Menu")
+    st.success("Verze: 3.17 (Detail Obalů)")
+    file_hu = st.file_uploader("📂 OBALY (Pack)", type=['csv', 'xlsx'])
+    file_items = st.file_uploader("📂 MATERIÁL (Pick)", type=['csv', 'xlsx'])
 
-    is_full = False
-    try:
-        if pd.notna(load_wt) and float(load_wt) > 0: is_full = True
-    except: pass
-
-    return pd.Series([is_pallet, is_klt, is_carton, is_full])
-
-# --- GUI APLIKACE ---
-st.write("Nahrajte exporty pro analýzu.")
-col1, col2 = st.columns(2)
-file_hu = col1.file_uploader("Soubor 1: OBALY (HU)", type=['csv', 'xlsx'])
-file_items = col2.file_uploader("Soubor 2: MATERIÁLY (Items)", type=['csv', 'xlsx'])
+st.title("📦 Logistický Analyzátor")
 
 if file_hu and file_items:
     try:
-        # Načtení
+        # LOAD
         df_hu = pd.read_csv(file_hu) if file_hu.name.endswith('.csv') else pd.read_excel(file_hu)
         df_items = pd.read_csv(file_items) if file_items.name.endswith('.csv') else pd.read_excel(file_items)
 
-        # Items logic
-        if 'Dest.Storage Bin' in df_items.columns:
-            df_items['Delivery_ID'] = df_items['Dest.Storage Bin'].astype(str).str.replace(r'\.0$', '', regex=True)
-        else:
-            st.error("Chyba: Soubor materiálů nemá sloupec 'Dest.Storage Bin'")
-            st.stop()
+        # PREP
+        item_del_col = 'Dest.Storage Bin' if 'Dest.Storage Bin' in df_items.columns else 'Generated delivery'
+        df_items['Delivery_ID'] = df_items[item_del_col].apply(clean_id)
+        df_items['Material'] = df_items['Material'].astype(str)
 
         items_agg = df_items.groupby('Delivery_ID').agg({
-            'Material': lambda x: ", ".join(x.unique().astype(str)),
+            'Material': lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0],
             'Act.qty (dest)': 'sum'
-        }).reset_index().rename(columns={'Material': 'Materiál', 'Act.qty (dest)': 'Počet kusů'})
+        }).reset_index().rename(columns={'Material': 'Hlavní_Materiál', 'Act.qty (dest)': 'Počet kusů'})
 
-        # HU logic
-        if 'Generated delivery' in df_hu.columns:
-            df_hu = df_hu[df_hu['Generated delivery'].notna()]
-            df_hu['Delivery_ID'] = df_hu['Generated delivery'].astype(str).str.replace(r'\.0$', '', regex=True)
-        else:
-            st.error("Chyba: Soubor obalů nemá sloupec 'Generated delivery'")
-            st.stop()
-            
+        hu_del_col = 'Generated delivery'
+        df_hu = df_hu[df_hu[hu_del_col].notna()]
+        df_hu['Delivery_ID'] = df_hu[hu_del_col].apply(clean_id)
         df_hu['Weight_KG'] = df_hu.apply(normalize_weight, axis=1)
         df_hu['L_CM'] = df_hu.apply(lambda x: normalize_dim(x['Length'], x['Unit of Dimension']), axis=1)
         df_hu['W_CM'] = df_hu.apply(lambda x: normalize_dim(x['Width'], x['Unit of Dimension']), axis=1)
-        df_hu[['Is_Pallet', 'Is_KLT', 'Is_Carton', 'Is_Full']] = df_hu.apply(classify_hu, axis=1)
 
+        # Klasifikace
+        df_hu[['Is_Pallet', 'Is_KLT', 'Is_Carton']] = df_hu.apply(classify_hu_row, axis=1)
+
+        # --- DETAIL OBALŮ ---
+        def get_pack_details(group):
+            counts = group['Packaging materials'].value_counts()
+            details = []
+            for code, count in counts.items():
+                code = str(code).strip()
+                desc = PACKAGING_DESC.get(code, "")
+                if desc:
+                    details.append(f"{code} - {desc} ({count}x)")
+                else:
+                    details.append(f"{code} ({count}x)")
+            return "; ".join(details)
+
+        pack_details = df_hu.groupby('Delivery_ID').apply(get_pack_details).reset_index(name='Detail Obalů')
+
+        # AGGREGATION
         hu_agg = df_hu.groupby('Delivery_ID').apply(lambda x: pd.Series({
-            'Počet palet': x['Is_Pallet'].sum(),
-            'Počet KLT': x['Is_KLT'].sum(),
-            'Počet plných KLT': x[x['Is_KLT'] & x['Is_Full']].shape[0],
-            'Počet prázdných KLT': x[x['Is_KLT'] & (~x['Is_Full'])].shape[0],
-            'Počet kartonů': x['Is_Carton'].sum(),
-            'Váha (KG)': x['Weight_KG'].sum()
-        })).reset_index()
+            'Raw_Pallets': x['Is_Pallet'].sum(),
+            'Raw_KLTs': x['Is_KLT'].sum(),
+            'Raw_Cartons': x['Is_Carton'].sum(),
+            'Total_Weight': x['Weight_KG'].sum(),
+            'Count_0780': (x['Packaging materials'].astype(str).str.strip() == '8216.0780.04').sum(),
+            'Count_6428': (x['Packaging materials'].astype(str).str.strip() == '8216.6428.01').sum()
+        }), include_groups=False).reset_index()
 
-        # Merge & Output
+        # Join Details
+        hu_agg = pd.merge(hu_agg, pack_details, on='Delivery_ID', how='left')
+
+        # MERGE
         final_df = pd.merge(items_agg, hu_agg, on='Delivery_ID', how='right').fillna(0)
-        
-        cols_int = ['Počet kusů', 'Počet palet', 'Počet KLT', 'Počet plných KLT', 'Počet prázdných KLT', 'Počet kartonů']
-        for c in cols_int: final_df[c] = final_df[c].astype(int)
-        final_df['Váha (KG)'] = final_df['Váha (KG)'].round(2)
-        
-        final_df.rename(columns={'Delivery_ID': 'Zakázka (Delivery)'}, inplace=True)
-        final_df = final_df[['Zakázka (Delivery)', 'Materiál', 'Počet kusů', 'Počet palet', 'Počet KLT', 'Počet plných KLT', 'Počet prázdných KLT', 'Počet kartonů', 'Váha (KG)']]
 
-        st.success("Hotovo!")
-        st.dataframe(final_df, use_container_width=True)
+        def apply_business_rules(row):
+            mat = str(row['Hlavní_Materiál'])
+            full_klts = int(row['Raw_KLTs'])
+            pallets = int(row['Raw_Pallets'])
+            empty_klts = 0
+            
+            # 1. Fix 3->4
+            if row['Count_0780'] == 3: full_klts += 1
+            if row['Count_6428'] == 3: full_klts += 1
+
+            # 2. Layer Logic (Only if >= 1 layer)
+            layer_size = LAYER_RULES.get(mat, 1)
+            if layer_size > 1 and full_klts >= layer_size: 
+                remainder = full_klts % layer_size
+                if remainder != 0:
+                    empty_klts = layer_size - remainder
+            
+            total_klts = full_klts + empty_klts
+            return pd.Series([pallets, total_klts, full_klts, empty_klts])
+
+        final_df[['Počet palet', 'Počet KLT', 'Počet plných KLT', 'Počet prázdných KLT']] = final_df.apply(apply_business_rules, axis=1)
+        final_df['Počet kartonů'] = final_df['Raw_Cartons']
+
+        # OUTPUT
+        output_df = final_df[['Delivery_ID', 'Hlavní_Materiál', 'Počet kusů', 
+                'Počet palet', 'Počet KLT', 'Počet plných KLT', 
+                'Počet prázdných KLT', 'Počet kartonů', 'Detail Obalů', 'Total_Weight']].copy()
+        
+        output_df.rename(columns={
+            'Delivery_ID': 'Zakázka (Delivery)', 
+            'Hlavní_Materiál': 'Materiál',
+            'Total_Weight': 'Váha (KG)'
+        }, inplace=True)
+
+        output_df['Zakázka (Delivery)'] = output_df['Zakázka (Delivery)'].astype(str)
+        output_df['Materiál'] = output_df['Materiál'].astype(str)
+        output_df['Počet kusů'] = output_df['Počet kusů'].fillna(0).astype(int)
+        output_df['Počet palet'] = output_df['Počet palet'].fillna(0).astype(int)
+        output_df['Počet KLT'] = output_df['Počet KLT'].fillna(0).astype(int)
+        output_df['Počet plných KLT'] = output_df['Počet plných KLT'].fillna(0).astype(int)
+        output_df['Počet prázdných KLT'] = output_df['Počet prázdných KLT'].fillna(0).astype(int)
+        output_df['Počet kartonů'] = output_df['Počet kartonů'].fillna(0).astype(int)
+        output_df['Váha (KG)'] = output_df['Váha (KG)'].fillna(0.0).astype(float).round(2)
+
+        # DISPLAY
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📦 Zakázek", len(output_df))
+        c2.metric("⚖️ Váha", f"{output_df['Váha (KG)'].sum():,.0f} kg")
+        c3.metric("🏗️ Palet", output_df['Počet palet'].sum())
+        c4.metric("🔧 Doplněno KLT", output_df['Počet prázdných KLT'].sum())
+
+        st.dataframe(
+            output_df,
+            column_config={
+                "Zakázka (Delivery)": st.column_config.TextColumn("Zakázka"),
+                "Materiál": st.column_config.TextColumn("Materiál"),
+                "Detail Obalů": st.column_config.TextColumn("Detail Obalů", width="large"),
+                "Počet kusů": st.column_config.NumberColumn("Kusů"),
+                "Počet prázdných KLT": st.column_config.NumberColumn(
+                    "Empty KLT", format="%d ⚠️"
+                ),
+                "Váha (KG)": st.column_config.NumberColumn("Váha", format="%.1f kg")
+            },
+            use_container_width=True,
+            hide_index=True,
+            key=f"data_{int(time.time())}"
+        )
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            final_df.to_excel(writer, index=False)
+            output_df.to_excel(writer, index=False, sheet_name="Report")
+            worksheet = writer.sheets['Report']
+            for i, col in enumerate(output_df.columns):
+                # Auto-adjust width roughly
+                worksheet.set_column(i, i, 20)
+            # Detail column wider
+            worksheet.set_column(8, 8, 50)
         
-        st.download_button("📥 Stáhnout Excel", buffer.getvalue(), "report.xlsx", "application/vnd.ms-excel")
+        st.download_button("📥 STÁHNOUT EXCEL REPORT", buffer.getvalue(), "report_final_v17.xlsx", "application/vnd.ms-excel")
 
     except Exception as e:
-
         st.error(f"Chyba: {e}")
+else:
+    st.info("Nahrajte soubory.")
