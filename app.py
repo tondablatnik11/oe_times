@@ -5,7 +5,7 @@ import time
 
 # --- 1. KONFIGURACE ---
 st.set_page_config(
-    page_title="Logistics Analyzer Final v17",
+    page_title="Logistics Analyzer Final v18",
     page_icon="🚛",
     layout="wide"
 )
@@ -25,9 +25,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. DATABÁZE PRAVIDEL (V3.17 - Added Descriptions) ---
+# --- 3. DATABÁZE PRAVIDEL (V3.17 - Kompletní seznam) ---
 
-# POPISY OBALŮ (Z EMPTIES.XLSX)
 PACKAGING_DESC = {
     '8216.00LP.04': 'PALLET OF WOOD 01',
     '8216.2032.01': 'GESTELL 2032 Mercedes',
@@ -84,7 +83,6 @@ PACKAGING_DESC = {
     '8216.0010.03': 'EURO-PALETTE 0010 MAN'
 }
 
-# A) PALETY
 PALLET_WHITELIST = [
     '8216.00LP.04', '8216.00KP.04', 
     '8216.2032.01', '8216.2035.01', 
@@ -94,7 +92,6 @@ PALLET_WHITELIST = [
     'CARTON-16', 'CARTON-17', 'CARTON-18'
 ]
 
-# B) KLT
 KLT_WHITELIST = [
     '8216.3215.01', '8216.4129.01', '8216.4314.01', 
     '8216.4329.01', '8216.4328.01', '8216.6129.01', 
@@ -106,7 +103,6 @@ KLT_WHITELIST = [
     '8216.00LR.04', '8216.00LD.04'
 ]
 
-# C) VRSTVY
 LAYER_RULES = {
     'A2C3261731402': 4,
     '2801405007390': 4,
@@ -164,9 +160,10 @@ def classify_hu_row(row):
 # --- 5. UI ---
 with st.sidebar:
     st.title("Menu")
-    st.success("Verze: 3.17 (Detail Obalů)")
-    file_hu = st.file_uploader("📂 OBALY (Pack)", type=['csv', 'xlsx'])
-    file_items = st.file_uploader("📂 MATERIÁL (Pick)", type=['csv', 'xlsx'])
+    st.success("Verze: 18.0 (Final Merge)")
+    file_hu = st.file_uploader("📂 1. OBALY (Pack)", type=['csv', 'xlsx'])
+    file_items = st.file_uploader("📂 2. MATERIÁL (Pick)", type=['csv', 'xlsx'])
+    file_times = st.file_uploader("📂 3. ČASY (K sjednocení)", type=['csv', 'xlsx'])
 
 st.title("📦 Logistický Analyzátor")
 
@@ -209,7 +206,7 @@ if file_hu and file_items:
                     details.append(f"{code} ({count}x)")
             return "; ".join(details)
 
-        pack_details = df_hu.groupby('Delivery_ID').apply(get_pack_details).reset_index(name='Detail Obalů')
+        pack_details = df_hu.groupby('Delivery_ID').apply(get_pack_details).reset_index(name='Packaging Details')
 
         # AGGREGATION
         hu_agg = df_hu.groupby('Delivery_ID').apply(lambda x: pd.Series({
@@ -224,7 +221,7 @@ if file_hu and file_items:
         # Join Details
         hu_agg = pd.merge(hu_agg, pack_details, on='Delivery_ID', how='left')
 
-        # MERGE
+        # MERGE do základní tabulky
         final_df = pd.merge(items_agg, hu_agg, on='Delivery_ID', how='right').fillna(0)
 
         def apply_business_rules(row):
@@ -233,11 +230,9 @@ if file_hu and file_items:
             pallets = int(row['Raw_Pallets'])
             empty_klts = 0
             
-            # 1. Fix 3->4
             if row['Count_0780'] == 3: full_klts += 1
             if row['Count_6428'] == 3: full_klts += 1
 
-            # 2. Layer Logic (Only if >= 1 layer)
             layer_size = LAYER_RULES.get(mat, 1)
             if layer_size > 1 and full_klts >= layer_size: 
                 remainder = full_klts % layer_size
@@ -250,64 +245,39 @@ if file_hu and file_items:
         final_df[['Počet palet', 'Počet KLT', 'Počet plných KLT', 'Počet prázdných KLT']] = final_df.apply(apply_business_rules, axis=1)
         final_df['Počet kartonů'] = final_df['Raw_Cartons']
 
-        # OUTPUT
-        output_df = final_df[['Delivery_ID', 'Hlavní_Materiál', 'Počet kusů', 
+        # Příprava dat pro merge s časy
+        report_data = final_df[['Delivery_ID', 'Hlavní_Materiál', 'Počet kusů', 
                 'Počet palet', 'Počet KLT', 'Počet plných KLT', 
-                'Počet prázdných KLT', 'Počet kartonů', 'Detail Obalů', 'Total_Weight']].copy()
+                'Počet prázdných KLT', 'Počet kartonů', 'Packaging Details', 'Total_Weight']].copy()
         
-        output_df.rename(columns={
-            'Delivery_ID': 'Zakázka (Delivery)', 
-            'Hlavní_Materiál': 'Materiál',
-            'Total_Weight': 'Váha (KG)'
-        }, inplace=True)
+        report_data.columns = ['Zakázka', 'Material', 'Number of pieces', 'Number of pallets', 'Number of KLTs', 'Full KLTs', 'Empty KLTs', 'Number of cartons', 'Packaging Details', 'Weight (kg)']
 
-        output_df['Zakázka (Delivery)'] = output_df['Zakázka (Delivery)'].astype(str)
-        output_df['Materiál'] = output_df['Materiál'].astype(str)
-        output_df['Počet kusů'] = output_df['Počet kusů'].fillna(0).astype(int)
-        output_df['Počet palet'] = output_df['Počet palet'].fillna(0).astype(int)
-        output_df['Počet KLT'] = output_df['Počet KLT'].fillna(0).astype(int)
-        output_df['Počet plných KLT'] = output_df['Počet plných KLT'].fillna(0).astype(int)
-        output_df['Počet prázdných KLT'] = output_df['Počet prázdných KLT'].fillna(0).astype(int)
-        output_df['Počet kartonů'] = output_df['Počet kartonů'].fillna(0).astype(int)
-        output_df['Váha (KG)'] = output_df['Váha (KG)'].fillna(0.0).astype(float).round(2)
+        # --- NOVÝ KROK: MERGE S ČASY ---
+        if file_times:
+            df_t = pd.read_csv(file_times) if file_times.name.endswith('.csv') else pd.read_excel(file_times)
+            df_t['DN NUMBER (SAP)'] = df_t['DN NUMBER (SAP)'].apply(clean_id)
+            
+            # Vyčištění souboru s časy od starých (prázdných) sloupců, které chceme doplnit
+            cols_to_fill = ['Material', 'Number of pieces', 'Number of pallets', 'Number of KLTs', 'Full KLTs', 'Empty KLTs', 'Number of cartons', 'Weight (kg)', 'Packaging Details']
+            df_t_clean = df_t.drop(columns=[c for c in cols_to_fill if c in df_t.columns])
+
+            # Spojení tabulek
+            output_df = pd.merge(df_t_clean, report_data, left_on='DN NUMBER (SAP)', right_on='Zakázka', how='left').drop(columns=['Zakázka'])
+            st.success("✅ Časy byly úspěšně propojeny s daty z reportu.")
+        else:
+            output_df = report_data
 
         # DISPLAY
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📦 Zakázek", len(output_df))
-        c2.metric("⚖️ Váha", f"{output_df['Váha (KG)'].sum():,.0f} kg")
-        c3.metric("🏗️ Palet", output_df['Počet palet'].sum())
-        c4.metric("🔧 Doplněno KLT", output_df['Počet prázdných KLT'].sum())
-
-        st.dataframe(
-            output_df,
-            column_config={
-                "Zakázka (Delivery)": st.column_config.TextColumn("Zakázka"),
-                "Materiál": st.column_config.TextColumn("Materiál"),
-                "Detail Obalů": st.column_config.TextColumn("Detail Obalů", width="large"),
-                "Počet kusů": st.column_config.NumberColumn("Kusů"),
-                "Počet prázdných KLT": st.column_config.NumberColumn(
-                    "Empty KLT", format="%d ⚠️"
-                ),
-                "Váha (KG)": st.column_config.NumberColumn("Váha", format="%.1f kg")
-            },
-            use_container_width=True,
-            hide_index=True,
-            key=f"data_{int(time.time())}"
-        )
+        st.dataframe(output_df, use_container_width=True, hide_index=True)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            output_df.to_excel(writer, index=False, sheet_name="Report")
-            worksheet = writer.sheets['Report']
+            output_df.to_excel(writer, index=False, sheet_name="Final_Report")
+            worksheet = writer.sheets['Final_Report']
             for i, col in enumerate(output_df.columns):
-                # Auto-adjust width roughly
                 worksheet.set_column(i, i, 20)
-            # Detail column wider
-            worksheet.set_column(8, 8, 50)
         
-        st.download_button("📥 STÁHNOUT EXCEL REPORT", buffer.getvalue(), "report_final_v17.xlsx", "application/vnd.ms-excel")
+        st.download_button("📥 STÁHNOUT FINÁLNÍ REPORT", buffer.getvalue(), "logistics_final_v18.xlsx")
 
     except Exception as e:
         st.error(f"Chyba: {e}")
-else:
-    st.info("Nahrajte soubory.")
