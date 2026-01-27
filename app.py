@@ -3,44 +3,44 @@ import pandas as pd
 import io
 import time
 
-# --- 1. KONFIGURACE A STYL ---
+# --- 1. KONFIGURACE A DARK THEME ---
 st.set_page_config(
     page_title="Logistics Analyzer Pro",
     page_icon="📦",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Vlastní CSS pro "vystajlování" aplikace
+# Vlastní CSS pro čistý Dark Mode a profesionální vzhled
 st.markdown("""
     <style>
-    /* Hlavní pozadí a písmo */
-    .main { background-color: #fdfdfd; }
+    /* Základní barvy pro Dark Mode */
+    [data-testid="stAppViewContainer"] { background-color: #0e1117; color: #ffffff; }
+    [data-testid="stHeader"] { background: rgba(0,0,0,0); }
+    [data-testid="stSidebar"] { background-color: #1a1c23; border-right: 1px solid #333; }
     
-    /* Úprava nadpisů */
-    h1 { color: #1e3a8a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 800; }
-    h3 { color: #3b82f6; font-weight: 600; margin-bottom: 0.5rem; }
+    /* Nadpisy a texty */
+    h1, h2, h3 { color: #58a6ff !important; font-family: 'Inter', sans-serif; }
+    .stMarkdown { color: #c9d1d9; }
 
-    /* Design tlačítek */
+    /* Úprava karet metrik */
+    [data-testid="stMetricValue"] { color: #58a6ff !important; font-weight: bold; }
+    div[data-testid="stMetric"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; }
+
+    /* Profesionální tlačítka */
     .stButton>button {
-        border-radius: 12px;
-        background-color: #2563eb;
+        width: 100%;
+        border-radius: 6px;
+        background-color: #238636;
         color: white;
-        font-weight: 600;
-        border: none;
-        transition: all 0.3s ease;
-        padding: 0.6rem;
+        border: 1px solid rgba(240,246,252,0.1);
+        padding: 0.5rem;
+        transition: 0.2s;
     }
-    .stButton>button:hover {
-        background-color: #1d4ed8;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-    }
+    .stButton>button:hover { background-color: #2ea043; border-color: #8b949e; }
     
-    /* Vylepšení karet s metrikami */
-    [data-testid="stMetricValue"] { font-size: 1.8rem; color: #1e3a8a; }
-    
-    /* Čistší Sidebar */
-    section[data-testid="stSidebar"] { background-color: #f1f5f9; border-right: 1px solid #e2e8f0; }
+    /* Úprava tabulky */
+    .stDataFrame { border: 1px solid #30363d; border-radius: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -50,19 +50,18 @@ PACKAGING_DESC = {
     '9860000415900': 'EURO-PALETTE 0010 MAN', '8216.00KP.04': 'PALLET OF WOOD 02',
     '8216.3215.01': 'KLT 3215 DAIMLER', '9860000417900': 'ABDECKPLATTE EURO 0207 MAN',
     '8216.00LR.04': 'FRAME OF WOOD 21', '8216.4129.01': 'KLT 4129 ESD DAIMLER',
-    '8216.0100.10': 'EPP-Behälter Radiofachgeräte', '8216.0782.04': 'SPACER OF SOLID BOARD 61',
-    '8216.4314.01': 'KLT 4314 DAIMLER', '9860000422400': 'KLT 4329',
-    '8216.4329.01': 'KLT 4329 DAIMLER', '9860000422000': 'KLT 4315',
+    '8216.0100.10': 'EPP-Behälter Radiofachgeräte', '8216.4314.01': 'KLT 4314 DAIMLER',
+    '8216.4329.01': 'KLT 4329 DAIMLER', '8216.4328.01': 'KLT 4328 DAIMLER',
     '8216.5009.01': 'EURO-PALETTE 5009 DAIMLER', '8216.6129.01': 'KLT 6129 ESD DAIMLER',
     '9860000421400': 'KLT 3215', '8216.1875.05': 'Palette RE MTCO MH 1875 SC',
     '8216.0010.03': 'EURO-PALETTE 0010 MAN', '8216.0474.05': 'KLT Plastic COO8 MH-0474 SCANI'
 }
 
 PALLET_WHITELIST = ['8216.00LP.04', '8216.00KP.04', '8216.2032.01', '8216.5009.01', '8216.1875.05', '8216.0010.03', '9860000415900', 'CARTON-16', 'CARTON-17', 'CARTON-18']
-KLT_WHITELIST = ['8216.3215.01', '8216.4129.01', '8216.4314.01', '8216.4329.01', '8216.6129.01', '9860000422000', '9860000421400', '000198390A000']
+KLT_WHITELIST = ['8216.3215.01', '8216.4129.01', '8216.4314.01', '8216.4329.01', '8216.6129.01', '9860000422000', '9860000421400']
 LAYER_RULES = {'A2C3261731402': 4, '2801405007390': 4, 'A2C7771840190': 4, 'A3C1149850001': 4, 'A2C1482010032': 8, 'A3C1051900001': 6, 'A3C1223480001': 3, 'A3C1223490001': 3, 'A3C1149860001': 4}
 
-# --- 3. FUNKCE ---
+# --- 3. LOGICKÉ FUNKCE (Zachování v17) ---
 def clean_id(val):
     if pd.isna(val): return ""
     try: return str(int(float(val)))
@@ -94,27 +93,19 @@ def classify_hu_row(row):
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=80)
-    st.title("Nastavení")
+    st.subheader("🛠️ Administrace")
+    file_hu = st.file_uploader("1. OBALY (Pack)", type=['csv', 'xlsx'])
+    file_items = st.file_uploader("2. MATERIÁL (Pick)", type=['csv', 'xlsx'])
     st.markdown("---")
-    
-    st.subheader("📁 Vstupní data")
-    file_hu = st.file_uploader("1. OBALY (Pack)", type=['csv', 'xlsx'], help="Export balících jednotek (Handling Units)")
-    file_items = st.file_uploader("2. MATERIÁL (Pick)", type=['csv', 'xlsx'], help="Export položek ze skladu")
-    
-    st.markdown("---")
-    st.subheader("🕒 Časový harmonogram")
-    file_times = st.file_uploader("3. ČASY (Volitelné)", type=['csv', 'xlsx'], help="Soubor pro sjednocení časy + data")
-    
-    st.info(f"Verze: 18.1 Pro\nStatus: Online")
+    file_times = st.file_uploader("3. ČASY (Harmonogram)", type=['csv', 'xlsx'])
+    st.caption("Verze 18.12 | Dark Mode Ready")
 
-# --- 5. HLAVNÍ OBSAH ---
-st.title("🚛 Logistics Analyzer Pro")
-st.markdown("Sjednocení logistických reportů a časových plánů v reálném čase.")
+# --- 5. HLAVNÍ DASHBOARD ---
+st.title("Logistics Analyzer Pro")
 
 if file_hu and file_items:
     try:
-        # Tichý processing
+        # Processing dat 
         df_hu = pd.read_csv(file_hu) if file_hu.name.endswith('.csv') else pd.read_excel(file_hu)
         df_items = pd.read_csv(file_items) if file_items.name.endswith('.csv') else pd.read_excel(file_items)
 
@@ -153,59 +144,35 @@ if file_hu and file_items:
         report_data = final_df[['Delivery_ID', 'Hlavní_Materiál', 'Počet kusů', 'Počet palet', 'Počet KLT', 'Počet plných KLT', 'Počet prázdných KLT', 'Raw_Cartons', 'Packaging Details', 'Total_Weight']].copy()
         report_data.columns = ['Zakázka', 'Material', 'Number of pieces', 'Number of pallets', 'Number of KLTs', 'Full KLTs', 'Empty KLTs', 'Number of cartons', 'Packaging Details', 'Weight (kg)']
 
-        # --- MERGE LOGIKA ---
+        # Propojení s časy 
         if file_times:
             df_t = pd.read_csv(file_times) if file_times.name.endswith('.csv') else pd.read_excel(file_times)
             df_t['DN NUMBER (SAP)'] = df_t['DN NUMBER (SAP)'].apply(clean_id)
             cols_to_fill = ['Material', 'Number of pieces', 'Number of pallets', 'Number of KLTs', 'Full KLTs', 'Empty KLTs', 'Number of cartons', 'Weight (kg)', 'Packaging Details']
             output_df = pd.merge(df_t.drop(columns=[c for c in cols_to_fill if c in df_t.columns]), report_data, left_on='DN NUMBER (SAP)', right_on='Zakázka', how='left').drop(columns=['Zakázka'])
+            st.success("✅ Časy sjednoceny")
         else:
             output_df = report_data
 
-        # --- VIZUÁLNÍ PANEL METRIK ---
-        st.divider()
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("📦 Celkem zakázek", len(output_df))
-        m2.metric("⚖️ Celková váha", f"{output_df['Weight (kg)'].sum():,.1f} kg")
-        m3.metric("🏗️ Počet palet", int(output_df['Number of pallets'].sum()))
-        m4.metric("🔧 Prázdné KLT", int(output_df['Empty KLTs'].sum()))
+        # --- STATS ---
+        st.markdown("### 📊 Klíčové indikátory")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Zakázky", len(output_df))
+        c2.metric("Váha", f"{output_df['Weight (kg)'].sum():.1f} kg")
+        c3.metric("Palety", int(output_df['Number of pallets'].sum()))
+        c4.metric("Prázdné KLT", int(output_df['Empty KLTs'].sum()))
 
-        # --- HLAVNÍ TABULKA ---
-        st.subheader("🔍 Náhled výsledných dat")
-        st.dataframe(
-            output_df, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Weight (kg)": st.column_config.NumberColumn("Váha", format="%.2f kg"),
-                "Number of pieces": st.column_config.NumberColumn("Kusy"),
-                "Empty KLTs": st.column_config.NumberColumn("⚠️ Prázdné KLT")
-            }
-        )
+        # --- DATA ---
+        st.markdown("### 📑 Výsledný report")
+        st.dataframe(output_df, use_container_width=True, hide_index=True)
 
-        # --- EXPORT ---
-        st.divider()
-        col_down, _ = st.columns([1, 2])
-        with col_down:
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                output_df.to_excel(writer, index=False, sheet_name="Final_Report")
-                # Auto-fit sloupců pro Excel
-                worksheet = writer.sheets['Final_Report']
-                for i, col in enumerate(output_df.columns):
-                    column_len = max(output_df[col].astype(str).str.len().max(), len(col)) + 2
-                    worksheet.set_column(i, i, column_len)
-            
-            st.download_button(
-                label="📥 STÁHNOUT KOMPLETNÍ EXCEL REPORT",
-                data=buffer.getvalue(),
-                file_name=f"Logistics_Report_{time.strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+        # --- DOWNLOAD ---
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            output_df.to_excel(writer, index=False, sheet_name="Report")
+        st.download_button("📥 EXPORT DO EXCELU", buffer.getvalue(), "logistics_report.xlsx")
 
     except Exception as e:
-        st.error(f"⚠️ Došlo k chybě při zpracování: {e}")
+        st.error(f"Chyba: {e}")
 else:
-    # Úvodní obrazovka, když nejsou data
-    st.info("💡 Nahrajte soubory v levém menu pro zahájení analýzy.")
-    st.image("https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&q=80&w=1000", caption="Logistics Hub")
+    st.warning("Čekám na nahrání souborů v levém menu.")
